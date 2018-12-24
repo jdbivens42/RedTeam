@@ -7,7 +7,7 @@ A simple HTTP shell handler that borrows heavily from c2trash (https://github.co
 ### Features
 Supports multiple targets.
 Anything that can download and execute an HTTP page is a fully supported client.
+Optional SSL / HTTPS encryption
 
 ### Known Limitations
 NAT'ed targets are a race condition (the first client to request the page will consume all commands).
-No encryption (an HTTPS version could be created pretty easily, though)
