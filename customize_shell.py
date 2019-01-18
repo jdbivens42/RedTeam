@@ -15,6 +15,8 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("-a","--LHOST", help="The ip Address of the listening host.")
 parser.add_argument("-p","--LPORT", default="443", help="The listening port.")
+parser.add_argument("-a","--RHOST", help="The ip Address of the listening host.")
+parser.add_argument("-p","--RPORT", help="The listening port.")
 parser.add_argument("-s","--SHELL", default='/bin/bash', help="The shell to use for the connection.")
 
 parser.add_argument("--no-prompt", action="store_true", help="Do no prompt - assume default LHOST")
@@ -54,9 +56,11 @@ else:
     args.LHOST = ip_map[default][1]
 
 pairs = []
-for var in ["LHOST", "LPORT", "SHELL"]:
-    pairs.append(args.wrap.format(var))
-    pairs.append(getattr(args, var))
+for var in ["LHOST", "LPORT", "RHOST", "RPORT, ""SHELL"]:
+    value = getattr(args,var)
+    if value is not None:
+        pairs.append(args.wrap.format(var))
+        pairs.append(value)
 
 if args.verbosity:
     pairs.insert(0, "-"+"v"*args.verbosity)
