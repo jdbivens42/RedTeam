@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-a', '--all', action="store_true", help="Read the entire contents of STDIN before performing replacement.")
 parser.add_argument('-d', '--delete', action="append", help="Delete this string sequence. Note: all deletions are done before PAIRS are processed. Use OLD '' for granular control over order") 
 parser.add_argument('-v', '--verbosity', default=0, action="count", help="Print replacement information to STDERR")
-parser.add_argument('PAIR',  help="A pair is in the form: OLD NEW . Replace all occurences of OLD with NEW", action="append", nargs="*")
+parser.add_argument('PAIR',  help="A pair is in the form: OLD NEW . Replace all occurences of OLD with NEW", action="append", nargs=argparse.REMAINDER)
 
 args = parser.parse_args()
 for pair_list in args.PAIR:
