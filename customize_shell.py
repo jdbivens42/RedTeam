@@ -22,7 +22,7 @@ path_to_replacer = os.path.join(os.path.dirname(__file__), 'replace.py')
 path_to_replacer = os.path.realpath(os.path.expanduser(path_to_replacer))
 
 parser = argparse.ArgumentParser()
-supported = ["LHOST", "LPORT", "RHOST", "RPORT", "SHELL", "SHELL_ARGS", "PROTO", "EXE", "RAND_INT", "RAND_PASS"]
+supported = ["LHOST", "LPORT", "RHOST", "RPORT", "SHELL", "SHELL_ARGS", "PROTO", "EXE", "RAND_INT", "RAND_PASS", "OBF_KEY"]
 parser.add_argument("-a","--LHOST", help="The ip Address of the listening host.")
 parser.add_argument("-p","--LPORT", default="443", help="The listening port.")
 parser.add_argument("-r","--RHOST", help="The ip Address of the listening host.")
@@ -38,13 +38,30 @@ parser.add_argument("--RAND_PASS", type=int, action="store",
     help="Produces a random password of length LEN." +
          " Passwords may contain letters and numbers. The same string is used for all occurances of the placeholder.", 
     nargs="?")
+
+parser.add_argument("--OBF_KEY", action="store", help="A key / password used for string obfuscation in the binary")
+
 parser.add_argument("--no-prompt", action="store_true", help="Do no prompt - assume default LHOST")
 parser.add_argument("--no-warnings", action="store_true", help="Disable warnings.")
+
+parser.add_argument("--custom", action="store_true", 
+                    help="Accept all string replacement paris in the form --OLD NEW. " +
+                    "Allows you to define your own variables without explicitly adding support for them here.")
+
 parser.add_argument("-w", "--wrap", default="{{{}}}", 
     help="Wrap each parameter in this python format string. Default is {{{}}}, meaning that strings {LHOST}, {LPORT}, etc. are replaced.")
 parser.add_argument('-v', '--verbosity', default=0, action="count", help="Print replacement information to STDERR")
 
 parser.add_argument("file", nargs="+", help='files to customize.')
+
+known, unknown = parser.parse_known_args()
+if known.custom:
+    for arg in unknown:
+        if arg.startswith('--'):
+            if known.verbosity > 0:
+                print("Adding custom arg: {} with value: {}".format(arg, unknown.arg))
+            parser.add_argument(arg)
+            supported.append(arg[2:])
 
 args = parser.parse_args()
 
@@ -58,7 +75,7 @@ if args.RAND_INT:
 
 if args.RAND_PASS is not None:
     args.RAND_PASS = rand_pass(size=args.RAND_PASS)
-    print_err("RAND_PASS: {}".format(args.RAND_PASS), file=sys.stderr)
+    print_err("RAND_PASS: {}".format(args.RAND_PASS))
 
 ip_map = [(i, ni.ifaddresses(i)[ni.AF_INET][0]['addr']) for i in ni.interfaces() ]
 r = range(len(ip_map))
@@ -84,12 +101,12 @@ def check_template(filename, pattern, supported, args):
             for m in matches:
                 if not args.no_warnings:
                     if m[0] not in supported and " " not in m[0]:
-                        print_err("Warning: {} not supported".format(m[0]), file=sys.stderr)
-                        print_err("Exiting. Run with --no-warnings to suppress.".format(m), file=sys.stderr)
+                        print_err("Warning: {} not supported".format(m[0]))
+                        print_err("Exiting. Run with --no-warnings to suppress.".format(m))
                         sys.exit(1)
                     elif hasattr(args, m[1]) and getattr(args, m[1]) is None:
-                        print_err("Warning: {} found but has no default".format(m[0]), file=sys.stderr)
-                        print_err("Exiting. Run with --no-warnings to suppress.".format(m), file=sys.stderr)
+                        print_err("Warning: {} found but has no default".format(m[0]))
+                        print_err("Exiting. Run with --no-warnings to suppress.".format(m))
                         sys.exit(1)
                     else:
                         if args.verbosity > 0:
