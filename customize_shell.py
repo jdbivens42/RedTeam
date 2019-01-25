@@ -48,6 +48,9 @@ parser.add_argument("file", nargs="+", help='files to customize.')
 
 args = parser.parse_args()
 
+def print_err(msg):
+    print(msg, file=sys.stderr)
+
 if args.RAND_INT:
     args.RAND_INT = [int(i) for i in args.RAND_INT]
     args.RAND_INT = random.randint(min(args.RAND_INT), max(args.RAND_INT))
@@ -55,7 +58,7 @@ if args.RAND_INT:
 
 if args.RAND_PASS is not None:
     args.RAND_PASS = rand_pass(size=args.RAND_PASS)
-    print("RAND_PASS: {}".format(args.RAND_PASS), file=sys.stderr)
+    print_err("RAND_PASS: {}".format(args.RAND_PASS), file=sys.stderr)
 
 ip_map = [(i, ni.ifaddresses(i)[ni.AF_INET][0]['addr']) for i in ni.interfaces() ]
 r = range(len(ip_map))
@@ -81,16 +84,16 @@ def check_template(filename, pattern, supported, args):
             for m in matches:
                 if not args.no_warnings:
                     if m[0] not in supported and " " not in m[0]:
-                        print("Warning: {} not supported".format(m[0]), file=sys.stderr)
-                        print("Exiting. Run with --no-warnings to suppress.".format(m), file=sys.stderr)
+                        print_err("Warning: {} not supported".format(m[0]), file=sys.stderr)
+                        print_err("Exiting. Run with --no-warnings to suppress.".format(m), file=sys.stderr)
                         sys.exit(1)
                     elif hasattr(args, m[1]) and getattr(args, m[1]) is None:
-                        print("Warning: {} found but has no default".format(m[0]), file=sys.stderr)
-                        print("Exiting. Run with --no-warnings to suppress.".format(m), file=sys.stderr)
+                        print_err("Warning: {} found but has no default".format(m[0]), file=sys.stderr)
+                        print_err("Exiting. Run with --no-warnings to suppress.".format(m), file=sys.stderr)
                         sys.exit(1)
                     else:
                         if args.verbosity > 0:
-                            print("Using: {} = {}".format(m, getattr(args, m[1]))) 
+                            print_err("Using: {} = {}".format(m, getattr(args, m[1]))) 
                 
 # Get our IP address. Prompt the user if necessary
 def validate_choice(choice, upper_limit):
@@ -99,7 +102,7 @@ def validate_choice(choice, upper_limit):
         if choice >=0 and choice <= upper_limit:
             return choice
     except Exception as e:
-        print(e)
+        print_err(e)
     return None
 
 choice = None
@@ -107,8 +110,9 @@ default = 1
 if not args.no_prompt and not args.LHOST:
     while choice is None:
         for i in r:
-            print("{: <4}{: <6}({})".format(str(i)+" :", ip_map[i][0], ip_map[i][1]))
-        choice = input("\nPlease Select an IP to listen on [{}]:".format(default))
+            print_err("{: <4}{: <6}({})".format(str(i)+" :", ip_map[i][0], ip_map[i][1]))
+        print_err("\nPlease Select an IP to listen on [{}]:".format(default))
+        choice = input()
         if not choice:
             choice = str(default)
         choice = validate_choice(choice, len(r))
