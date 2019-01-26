@@ -12,6 +12,9 @@ import argparse
 import re
 import string
 
+def print_err(msg):
+    print(msg, file=sys.stderr)
+
 def rand_pass(size=32, use_digits=True):
     digits = ""
     if use_digits:
@@ -48,25 +51,26 @@ parser.add_argument("--custom", action="store_true",
                     help="Accept all string replacement paris in the form --OLD NEW. " +
                     "Allows you to define your own variables without explicitly adding support for them here.")
 
+
 parser.add_argument("-w", "--wrap", default="{{{}}}", 
     help="Wrap each parameter in this python format string. Default is {{{}}}, meaning that strings {LHOST}, {LPORT}, etc. are replaced.")
 parser.add_argument('-v', '--verbosity', default=0, action="count", help="Print replacement information to STDERR")
 
-parser.add_argument("file", nargs="+", help='files to customize.')
+parser.add_argument("--get-opt", default=[], action="append", help="Print the values that will be used for the specified option and exit. Ex) customize_shell.py --no-prompt --get-opt LHOST")
+parser.add_argument("file", nargs='?', help='file to customize.')
 
 known, unknown = parser.parse_known_args()
 if known.custom:
     for arg in unknown:
         if arg.startswith('--'):
             if known.verbosity > 0:
-                print("Adding custom arg: {} with value: {}".format(arg, unknown.arg))
+                print_err("Adding custom arg: {} with value: {}".format(arg, unknown.arg))
             parser.add_argument(arg)
             supported.append(arg[2:])
 
 args = parser.parse_args()
 
-def print_err(msg):
-    print(msg, file=sys.stderr)
+assert args.get_opt or args.file, "Missing required paramater: file"
 
 if args.RAND_INT:
     args.RAND_INT = [int(i) for i in args.RAND_INT]
@@ -137,6 +141,13 @@ if not args.no_prompt and not args.LHOST:
 elif not args.LHOST:
     args.LHOST = ip_map[default][1]
 
+for opt in args.get_opt:
+    if hasattr(args, opt):
+        print(getattr(args, opt))
+    else:
+        print()
+    sys.exit(0)
+
 pairs = []
 for var in supported:
     value = getattr(args,var)
@@ -147,7 +158,6 @@ if args.verbosity:
     pairs.insert(0, "-"+"v"*args.verbosity)
 
 pattern = make_pattern(args.wrap)
-for filename in args.file:
-    check_template(filename, pattern, [args.wrap.format(s) for s in supported ], args )
-    with open (filename, 'rb') as f:
-        subprocess.run([path_to_replacer] + pairs, stdin=f , stdout=sys.stdout, stderr=sys.stderr)
+check_template(args.file, pattern, [args.wrap.format(s) for s in supported ], args )
+with open (args.file, 'rb') as f:
+    subprocess.run([path_to_replacer] + pairs, stdin=f , stdout=sys.stdout, stderr=sys.stderr)
