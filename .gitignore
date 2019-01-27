@@ -2,3 +2,6 @@
 *.swp
 release/
 **/*.key
+shells/go/src/*.go
+shells/cs/src/*.cs
+shells/python/src/*.py
